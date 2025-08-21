@@ -1,4 +1,4 @@
-# waris.py
+
 # special thanks to Yoz Ftseusj
 #
 #    This program is free software: you can redistribute it and/or modify
@@ -14,16 +14,18 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 # --------------------------- Revision History ----------------------------------
-# 2020-06-08	DH		Added FPP support
-# 2020-10-20	DH		Added control head support 
-# 2021-04-02 	DH		Added this header
+# 2020-06-08    DH      Added FPP support
+# 2020-10-20    DH      Added control head support 
+# 2021-04-02    DH      Added this header
 
-from StringIO import StringIO
+#from StringIO import StringIO
+import io
 import struct
 from time import sleep
 
-from chirp import bitwise, chirp_common, directory, errors, memmap
-from chirp.ui import bandplans, config
+from chirp import bitwise, chirp_common, directory, errors, memmap, bandplan
+#from chirp.ui import bandplans, config
+from chirp.wxui import config
 from chirp.util import hexprint
 from chirp.settings import RadioSetting, RadioSettings, RadioSettingGroup, \
                 RadioSettingValueBoolean, RadioSettingValueList, \
@@ -368,6 +370,8 @@ class DynamicMemoryMap(memmap.MemoryMap):
         """Set a chunk of memory at @pos to @value"""
         if isinstance(value, int):
             self._data[pos] = chr(value)
+        elif isinstance(value, bytearray):
+            self._data = value
         elif isinstance(value, str):
             for byte in value:
                 try:
@@ -379,45 +383,48 @@ class DynamicMemoryMap(memmap.MemoryMap):
             raise ValueError("Unsupported type %s for value" %
                              type(value).__name__)
 
+        def GetString(self):
+            yield self._data.decode('utf-8')
+
 
 def calc_checksum(data, cs=0):
     for byte in data:
-        cs += ord(byte)
+        cs += byte
         # print hex(ord(byte)), hex(~cs & 0xff)
     return ~cs & 0xff
 
 
 def _write(radio, data):
-    print "write:"
-    print hexprint(data)
+    print("write:")
+    print(hexprint(data))
     radio.pipe.flushInput()
     radio.pipe.write(data)
     echo = radio.pipe.read(len(data))
     if not echo:
         raise errors.RadioError("No echo. Cable or driver fault.")
     if echo != data:
-        print hexprint(echo)
+        print(hexprint(echo))
         raise errors.RadioError("Bad echo. Cable or driver fault.")
 
 
 def _read_frame(radio):
     resp = radio.pipe.read(1)
-    print "resp:"
-    print hexprint(resp)
-    if resp != 'P':
+    print("resp:")
+    print(hexprint(resp))
+    if resp != b'P':
         raise errors.RadioError('Radio is not in programming mode.')
     radio.pipe.read(1)  # 0xFF -- TODO: include this in 0x8b checksums
     data = radio.pipe.read(3)  # 0x80 00 24
     header_type, chunk_len = struct.unpack(">BH", data)
     data += radio.pipe.read(chunk_len)
-    print "read:"
-    print hexprint(data)
+    print("read:")
+    print(hexprint(data))
     return data
 
 
 def _request_frame(radio, offset, size):
-    frame = "\xf5\x11" + struct.pack(">BBH", size, 0, offset)
-    frame += chr(calc_checksum(frame))
+    frame = bytearray(b'\xf5\x11') + struct.pack(">BBH", size, 0, offset)
+    frame.extend(calc_checksum(frame).to_bytes(1,byteorder='little'))
     _write(radio, frame)
     data = _read_frame(radio)
     header_type, length, pad, addr = struct.unpack(">BHBH", data[:6])
@@ -429,13 +436,13 @@ def _write_chunk(radio, offset, data):
     frame += chr(calc_checksum(frame))
     _write(radio, frame)
     resp = radio.pipe.read(1)
-    print "resp:"
-    print hexprint(resp)
+    print("resp:")
+    print(hexprint(resp))
     if resp != 'P':
         raise errors.RadioError('Radio did not acknowledge write.')
     ack = radio.pipe.read(6)
-    print "F4 84 00 addr cs:"
-    print hexprint(ack)
+    print("F4 84 00 addr cs:")
+    print(hexprint(ack))
     cmd, zero, addr, cs = struct.unpack(">HBHB", ack)
     if offset != addr:
         raise errors.RadioError('Short write at 0x%X' % offset)
@@ -446,12 +453,12 @@ def reboot_radio(radio):
 
 
 def do_connect(radio):
-    print "timeout:", radio.pipe.timeout
+    print("timeout:", radio.pipe.timeout)
     status = chirp_common.Status()
     # enter program mode
-    frame = "\xf2\x23\x05"
-    frame += chr(calc_checksum(frame))
-    for i in xrange(3):
+    frame = bytearray(b'\xf2\x23\x05')
+    frame.extend(calc_checksum(frame).to_bytes(1,byteorder='little'))
+    for i in range(3):
         status.msg = "Connect to radio attempt %d" % (i + 1)
         radio.status_fn(status)
         try:
@@ -466,11 +473,11 @@ def do_connect(radio):
         raise errors.RadioError("Radio did not respond.")
 
     # I think this is an ident:
-    frame = "\xf2\x23\x0f"
-    frame += chr(calc_checksum(frame))
+    frame = bytearray(b'\xf2\x23\x0f')
+    frame.extend(calc_checksum(frame).to_bytes(1,byteorder='little'))
     _write(radio, frame)
-    print "ident:"
-    print hexprint(_read_frame(radio))
+    print("ident:")
+    print(hexprint(_read_frame(radio)))
 
 
 def do_download(radio):
@@ -486,15 +493,15 @@ def do_download(radio):
     status.msg = "Reading"
     status.max = radio._memsize
 
-    data = ""
+    data = bytearray()
     for offset in range(0, 0x4000, 0x20):
-        data += _request_frame(radio, offset, 0x20)
+        data.extend(_request_frame(radio, offset, 0x20))
         status.cur = offset
         radio.status_fn(status)
         if len(data) >= radio._memsize:
             break
 
-    return DynamicMemoryMap(data)
+    return DynamicMemoryMap(bytes(data))
 
 
 def do_upload(radio, start=0x300):
@@ -511,16 +518,37 @@ def do_upload(radio, start=0x300):
     reboot_radio(radio)
 
 
+# read.encode() is a problem ... 2 bytes in 3 bytes out
+#def _find_blocks(mmap):
+#    f = io.StringIO(mmap.get_packed())
+#    #f = io.StringIO(bitwise.string_straight_encode(mmap.get_byte_compatible()))
+#
+#    while True:
+#        read = f.read(2)
+#        if read == "":
+#            break
+##        block_length = int(bitwise.parse("u16 length;", read.encode()))
+#        blotto = bitwise.parse("u16 length;", read.encode())
+#        block_length = int(blotto['length'])
+#        print(f'block_length {block_length}')
+#        yield f.tell()
+#        f.read(block_length - 2)
+
 def _find_blocks(mmap):
-    f = StringIO(mmap)
+    f = io.StringIO(mmap.get_packed())
+    #f = io.StringIO(bitwise.string_straight_encode(mmap.get_byte_compatible()))
+
     while True:
         read = f.read(2)
         if read == "":
             break
-        block_length = int(bitwise.parse("u16 length;", read).length)
-        # print "0x%04x" % block_length
+        #block_length = int(bitwise.parse("u16 length;", read.encode()))
+        blotto = bitwise.parse("u16 length;", bitwise.string_straight_encode(read))
+        block_length = int(blotto['length'])
+        print(f'block_length {block_length}')
         yield f.tell()
         f.read(block_length - 2)
+
 
 
 CHUNK_HEADER = """
@@ -571,7 +599,7 @@ class Chunk:
 
 
 def _find_chunks(mmap, start=0x00):
-    f = StringIO(mmap)
+    f = io.StringIO(mmap.get_packed())
     f.seek(start)
     while True:
         chunk = Chunk()
@@ -597,7 +625,7 @@ def _find_chunks(mmap, start=0x00):
             chunk.offset = f.tell()
             if chunk.header.length == 0:
                 chunk.data = ""
-                for i in xrange(chunk.header.repeat):
+                for i in range(chunk.header.repeat):
                     membersize = f.read(1)
                     chunk.data += membersize + f.read(ord(membersize) * chunk.header.membersize)
             else:
@@ -617,7 +645,7 @@ def _find_chunks(mmap, start=0x00):
         else:
             msg = "Unknown header type: 0x%02X @ 0x%04X" % (
                 chunk.header_type, f.tell())
-            print msg
+            print(msg)
             break  # temporary until we know how to identify the end
             raise ValueError(msg)
 
@@ -723,7 +751,7 @@ class WarisBase(object):
         If IOError raise a File Access Error Exception
         """
         programming = ''.join([x.get_packed() for x in self._prog])
-        print "programming_length:", hex(0x308 + len(programming))
+        print("programming_length:", hex(0x308 + len(programming)))
         self._mmap = memmap.MemoryMap(self._mmap[:0x308] + programming)
         # TODO: update programming_length
         self.update_checksums()
@@ -769,7 +797,7 @@ class WarisBase(object):
         rx_point_str = ["%.3f MHz" % f for f in rxpiers]
 
         rsg = RadioSettingGroup("piers", "Tuning Piers")
-        for i in xrange(7):
+        for i in range(7):
             rs = RadioSetting(
                 "rxpier/%d" % i,
                 "Tuning Pier RX %d" % (i + 1),
@@ -785,7 +813,7 @@ class WarisBase(object):
         tuning.append(rsg)
 
         rsg = RadioSettingGroup("testfreqs", "RF Test Channels")
-        for i in xrange(14):
+        for i in range(14):
             rs = RadioSetting(
                 "testfreq/%d" % i,
                 "Test Mode CH%02d/CH%02d %s" % (
@@ -988,7 +1016,7 @@ class WarisRadio(WarisBase):
         }
         self._memobj = bitwise.parse(PROGRAMMING_HEADER_FORMAT, self._mmap)
         section_map_length, = struct.unpack(">H",
-            self._mmap[self._memobj.section_map_addr:
+            self._mmap.get_packed()[self._memobj.section_map_addr:
                        self._memobj.section_map_addr+2])
         self._addr = bitwise.parse("#seekto %d; u16 address[%d];" % (
             self._memobj.section_map_addr+2, section_map_length), self._mmap)
@@ -997,7 +1025,7 @@ class WarisRadio(WarisBase):
         self._byaddr = dict([(p.start, p) for p in self._prog])
         self._map = bitwise.parse(MAP % self._memobj.section_map_addr,
                                   DynamicMemoryMap(str(self._mmap)))
-        print self._map
+        print(self._map)
         # for i, c in enumerate(self._prog):
         #     print "%2d" % i, c.fingerprint(), layout_rev.get(i, '')
             # print c
@@ -1019,12 +1047,12 @@ class WarisRadio(WarisBase):
     def update_checksums(self):
         super(WarisRadio, self).update_checksums()
         for i, c in enumerate(self._prog):
-            print "section %d: %x %x" % (i, c.checksum, c.calc_checksum())
+            print("section %d: %x %x" % (i, c.checksum, c.calc_checksum()))
         cs_addr = 0x300 + self._memobj.programming_length
-        print "programming_checksum: %x %x" % (
+        print("programming_checksum: %x %x" % (
             ord(self._mmap[cs_addr] or '\0'),
             calc_checksum(self._mmap[0x300:cs_addr], 0xa5),
-        )
+        ))
 
     def _personality_assignment_to_zone(self, f):
         """Personality assignment to zone map looks like
@@ -1039,27 +1067,27 @@ class WarisRadio(WarisBase):
         """
         f.seek(self._prog[2].offset - 3)
         zone_count = ord(f.read(1))
-        print "Zones:", zone_count
+        print("Zones:", zone_count)
         f.read(2)
-        for zone in xrange(zone_count):
+        for zone in range(zone_count):
             channel_count = ord(f.read(1))
-            print "Zone %d: %s [%d channels]" % (
+            print( "Zone %d: %s [%d channels]" % (
                 zone + 1,
                 self._memobj.zonenames[zone].name,
-                channel_count)
-            for channel in xrange(channel_count):
+                channel_count))
+            for channel in range(channel_count):
                 f.read(1)
                 personality = ord(f.read(1))
-                print "%4d %s Conventional-%d" % (
+                print("%4d %s Conventional-%d" % (
                     channel + 1,
                     self._memobj.personalitynames[personality].name,
-                    personality + 1)
-        print "next: 0x%04x" % f.tell()
+                    personality + 1))
+        print( "next: 0x%04x" % f.tell())
 
     def _print_scan_lists(self):
-        for i in xrange(self._prog[9].header.repeat):
-            print "Scan List - %d" % (i + 1)
-            for j in xrange(16):
+        for i in range(self._prog[9].header.repeat):
+            print("Scan List - %d" % (i + 1))
+            for j in range(16):
                 scanlistmember = self._memobj.scanlist[i].scanlistmember[j]
                 if scanlistmember.type == 0:
                     break
@@ -1068,9 +1096,9 @@ class WarisRadio(WarisBase):
                 elif scanlistmember.type == 7:
                     name = "<selected>"
                 else:
-                    print "Unknown scanlistmember type %d" % scanlistmember.type
+                    print("Unknown scanlistmember type %d" % scanlistmember.type)
                     return
-                print "\t%s" % name
+                print("\t%s" % name)
 
     def _decode_tone(self, mode, value, invert=False):
         if mode == 0 or value == 0:
@@ -1088,8 +1116,8 @@ class WarisRadio(WarisBase):
             repr(self._channel_names._memobj.personalitynames[number - 1])
 
     def get_memory(self, number):
-        if not hasattr(self, "bandplans"):
-            self.bandplans = bandplans.BandPlans(config.get())
+        if not hasattr(self, "bandplan"):
+            self.bandplans = bandplan.BandPlans(config.get())
 
         _mem = self._channels._memobj.personality[number - 1]
         mem = chirp_common.Memory()
@@ -1177,7 +1205,7 @@ class WarisRadio(WarisBase):
         try:
             settings2 = self._byaddr[int(self._map.addr.settings2)]
             settings2.parse(HT1250_SETTINGS2)
-            print "settings2", repr(settings2._memobj.settings2)
+            print("settings2", repr(settings2._memobj.settings2))
             rs = RadioSetting("radiopassword", "Radio Password",
                 RadioSettingValueInteger(0, 9999,
                     settings2._memobj.settings2.radiopassword))
@@ -1230,8 +1258,8 @@ class WarisTuningRadio(WarisBase, chirp_common.CloneModeRadio):
             else:
                 obj = self._tuning
 
-            print "Setting %s = %s" % (name, setting.value)
-            print repr(obj)
+            print("Setting %s = %s" % (name, setting.value))
+            print(repr(obj))
             if setting.has_apply_callback():
                 setting.run_apply_callback()
             else:
