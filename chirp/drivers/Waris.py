@@ -263,7 +263,7 @@ struct {
      squelchtight:1,
      unknown3c:2;
   u8 nonstandardreverseburst:1,
-     vox:1
+     vox:1,
      unknown4a:3,
      tot:3;         // ('Infinite', 15, 30, 25, 60, 90, 120, 180)
   u8 compression:2, // ('Disabled', 'Full Compression', 'AGC mode')
@@ -566,7 +566,7 @@ class Chunk:
         return calc_checksum(data, 0xa5)
 
     def parse(self, memformat):
-        self._memobj = bitwise.parse(memformat, self.data)
+        self._memobj = bitwise.parse(memformat, bytes(self.data._data))
         return self._memobj
 
     def update_lengths(self):
@@ -1015,9 +1015,16 @@ class WarisRadio(WarisBase):
             # 32 in PMUE1929D, cp version 11.0
         }
         self._memobj = bitwise.parse(PROGRAMMING_HEADER_FORMAT, self._mmap)
-        section_map_length, = struct.unpack(">H",
-            self._mmap.get_packed()[self._memobj.section_map_addr:
-                       self._memobj.section_map_addr+2])
+# old
+#        section_map_length, = struct.unpack(">H",
+#            self._mmap.get_packed()[self._memobj.section_map_addr:
+#                       self._memobj.section_map_addr+2])
+        section_map_addr = self._memobj['section_map_addr']
+        map_length_data = self._mmap.get(section_map_addr,2)
+        map_length_data_b = bitwise.string_straight_encode(map_length_data)
+
+
+        section_map_length, = struct.unpack(">H",map_length_data_b)
         self._addr = bitwise.parse("#seekto %d; u16 address[%d];" % (
             self._memobj.section_map_addr+2, section_map_length), self._mmap)
         # layout_rev = dict([(v, k) for k, v in self._programming_layout.items()])
@@ -1030,7 +1037,8 @@ class WarisRadio(WarisBase):
         #     print "%2d" % i, c.fingerprint(), layout_rev.get(i, '')
             # print c
 
-        self._channels = self._byaddr[int(self._map.addr.channels)]
+        channels_adr = int(self._map.addr.channels)
+        self._channels = self._byaddr[channels_adr]
         self._channels.parse(CHANNELS)
         self._num_personality = self._channels.header.repeat
 
