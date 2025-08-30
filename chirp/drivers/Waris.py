@@ -31,6 +31,7 @@ from chirp.settings import RadioSetting, RadioSettings, RadioSettingGroup, \
                 RadioSettingValueBoolean, RadioSettingValueList, \
                 RadioSettingValueInteger, RadioSettingValueString, \
                 RadioSettingValueFloat, RadioSettingValueMap, InvalidValueError
+from inspect import currentframe, getframeinfo
 
 
 TUNING_FORMAT = """
@@ -387,12 +388,31 @@ class DynamicMemoryMap(memmap.MemoryMap):
             yield self._data.decode('utf-8')
 
 
+# data: chr or bytearray
 def calc_checksum(data, cs=0):
-    for byte in data:
-        cs += byte
-        # print hex(ord(byte)), hex(~cs & 0xff)
-    return ~cs & 0xff
+    offset = 0
+    lastbyte = 0;
+    if isinstance(data,bytearray):
+        for byte in data:
+            lastbyte = byte
+            cs += byte
+            offset += 1
+    elif isinstance(data,bytes):
+        offset = 0
+        for byte in data:
+            lastbyte = byte
+            cs += byte
+            offset += 1
+    elif isinstance(data, str):
+        for byte in data:
+            lastbyte = byte
+            cs += ord(byte)
+            offset += 1
 
+    # print hex(ord(byte)), hex(~cs & 0xff)
+    ret = ~cs & 0xff
+    print(f'returning 0x{ret:x} offset 0x{offset-1:x}')
+    return ~cs & 0xff
 
 def _write(radio, data):
     print("write:")
@@ -423,8 +443,8 @@ def _read_frame(radio):
 
 
 def _request_frame(radio, offset, size):
-    frame = bytearray(b'\xf5\x11') + struct.pack(">BBH", size, 0, offset)
-    frame.extend(calc_checksum(frame).to_bytes(1,byteorder='little'))
+    # send READ_DATA_REQ
+    frame = create_frame(bytearray(b'\xf5\x11') + struct.pack(">BBH", size, 0, offset))
     _write(radio, frame)
     data = _read_frame(radio)
     header_type, length, pad, addr = struct.unpack(">BHBH", data[:6])
@@ -432,6 +452,7 @@ def _request_frame(radio, offset, size):
 
 
 def _write_chunk(radio, offset, data):
+    # send WRITE_DATA_REQ
     frame = "\xff\x17" + struct.pack(">HBH", len(data) + 4, 0, offset) + data
     frame += chr(calc_checksum(frame))
     _write(radio, frame)
@@ -451,13 +472,17 @@ def _write_chunk(radio, offset, data):
 def reboot_radio(radio):
     radio.pipe.write("\xF1\x10\xFE")
 
+def create_frame(data):
+    frame = bytearray(data)
+    frame.extend(calc_checksum(frame).to_bytes(1,byteorder='little'))
+    return frame
 
 def do_connect(radio):
     print("timeout:", radio.pipe.timeout)
     status = chirp_common.Status()
     # enter program mode
-    frame = bytearray(b'\xf2\x23\x05')
-    frame.extend(calc_checksum(frame).to_bytes(1,byteorder='little'))
+    frame = create_frame(b'\xf2\x23\x05')
+
     for i in range(3):
         status.msg = "Connect to radio attempt %d" % (i + 1)
         radio.status_fn(status)
@@ -473,8 +498,7 @@ def do_connect(radio):
         raise errors.RadioError("Radio did not respond.")
 
     # I think this is an ident:
-    frame = bytearray(b'\xf2\x23\x0f')
-    frame.extend(calc_checksum(frame).to_bytes(1,byteorder='little'))
+    frame = create_frame(b'\xf2\x23\x0f')
     _write(radio, frame)
     print("ident:")
     print(hexprint(_read_frame(radio)))
@@ -499,9 +523,18 @@ def do_download(radio):
         status.cur = offset
         radio.status_fn(status)
         if len(data) >= radio._memsize:
+            print(f'stopped reading @ 0x{offset:x}, 0x{len(data):x} > 0x{radio._memsize:x}')
             break
 
-    return DynamicMemoryMap(bytes(data))
+    mapfile = open('/home/skip/e.bin', "wb")
+    mapfile.write(bytes(data[:radio._memsize]))
+    mapfile.close()
+    print('saved ~/e.bin')
+
+    TheMap = DynamicMemoryMap(bytes(data))
+    #print('Memory map:\n' + TheMap.printable() + '\n')
+
+    return TheMap
 
 
 def do_upload(radio, start=0x300):
@@ -561,9 +594,16 @@ ARRAY_CHUNK_HEADER = SMALL_CHUNK_HEADER + "\nu16 membersize;"
 
 class Chunk:
     def calc_checksum(self):
-        data = chr(self.header_type) + self.header._data.get_packed() + \
-            self.data.get_packed()
-        return calc_checksum(data, 0xa5)
+        packed_hdr = bitwise.string_straight_decode(self.header._data.get_packed())
+        #print(f'packed_hdr {hexprint(packed_hdr)}')
+        packed_data = self.data.get_packed()
+        #print(f'packed_data {hexprint(packed_data)}')
+        data = chr(self.header_type) + packed_hdr + packed_data
+        #print(f'data {hexprint(data)}')
+        byte_data = bitwise.string_straight_encode(data)
+        print(f'byte_data {hexprint(byte_data)}')
+
+        return calc_checksum(byte_data, 0xa5)
 
     def parse(self, memformat):
         self._memobj = bitwise.parse(memformat, bytes(self.data._data))
@@ -575,9 +615,14 @@ class Chunk:
 
     def get_packed(self):
         self.update_lengths()
+        frameinfo = getframeinfo(currentframe())
+        print(f'{frameinfo.filename}:{frameinfo.lineno}')
         self.checksum = self.calc_checksum()
-        return chr(self.header_type) + self.header._data.get_packed() + \
-            self.data.get_packed() + chr(self.checksum)
+#        return chr(self.header_type) + bitwise.string_straight_decode(self.header._data.get_packed()) + \
+#            bitwise.string_straight_decode(self.data.get_packed()) + chr(self.checksum)
+        char_hdr = bitwise.string_straight_decode(self.header._data.get_packed())
+        char_data = self.data.get_packed()
+        return chr(self.header_type) + char_hdr + char_data + chr(self.checksum)
 
     def validate(self):
         assert self.checksum == self.calc_checksum()
@@ -727,6 +772,7 @@ class WarisBase(object):
     # Do a download of the radio from the serial port
     def sync_in(self):
         self._mmap = do_download(self)
+        print('self._mmap:\n' + self._mmap.printable() + '\n')
         self.process_mmap()
 
     # Do an upload of the radio to the serial port
@@ -740,7 +786,7 @@ class WarisBase(object):
 
     def load_mmap(self, filename):
         """Load the radio's memory map from @filename"""
-        mapfile = file(filename, "rb")
+        mapfile = open(filename, "rb")
         self._mmap = DynamicMemoryMap(mapfile.read())
         mapfile.close()
         self.process_mmap()
@@ -750,23 +796,51 @@ class WarisBase(object):
         try to open a file and write to it
         If IOError raise a File Access Error Exception
         """
-        programming = ''.join([x.get_packed() for x in self._prog])
+        # _prog: list of Chunk objects
+#        programming = ''.join([x.get_packed() for x in self._prog])
+        programming = ''
+        for x in self._prog:
+            new_data = x.get_packed()
+            programming += new_data
         print("programming_length:", hex(0x308 + len(programming)))
-        self._mmap = memmap.MemoryMap(self._mmap[:0x308] + programming)
+        #self._mmap = memmap.MemoryMap(str(self._mmap[:0x308]) + programming)
+        #truncated_mm = self._mmap[:0x308]
+        #truncated_mm = self._mmap._data[:0x308]
+        truncated_mm = self._mmap.get(0,0x308)
+        print(f'len(truncated_mm) {len(truncated_mm)}/0x{len(truncated_mm):x}')
+        truncated_mm_str = str(truncated_mm)
+        print(f'len(truncated_mm_str) {len(truncated_mm_str)}/0x{len(truncated_mm_str):x}')
+        both = truncated_mm_str + programming
+        print(f'len(both) {len(both)}/0x{len(both):x}')
+        self._mmap = memmap.MemoryMap(both)
         # TODO: update programming_length
         self.update_checksums()
         try:
-            mapfile = file(filename, "wb")
-            mapfile.write(self._mmap.get_packed())
+            mapfile = open(filename, "wb")
+            print(f'opened {filename}')
+            mapfile.write(bitwise.string_straight_encode(self._mmap.get_packed()))
             mapfile.close()
         except IOError:
             raise Exception("File Access Error")
 
     def update_checksums(self):
-        self._tuning.tuningcs = calc_checksum(self._mmap[:0x27f], 0xa5)
+        data = self._mmap.get(0,0x27f)
+        frameinfo = getframeinfo(currentframe())
+        print(f'{frameinfo.filename}:{frameinfo.lineno}')
+        self._tuning.tuningcs = calc_checksum(data, 0xa5)
+        print(f'tuningcs ', self._tuning.tuningcs)
+        # 0x282: adr of fdb1
         for chunk in _find_chunks(self._mmap, 0x282):
-            self._mmap[chunk.end - 1] = chunk.calc_checksum()
-        self._tuning.fdbcs = calc_checksum(self._mmap[0x280:0x2ff], 0xa5)
+            frameinfo = getframeinfo(currentframe())
+            print(f'{frameinfo.filename}:{frameinfo.lineno}')
+            cksum = chunk.calc_checksum()
+            print(f'chunk cksum 0x{cksum:x}')
+            self._mmap.set(chunk.end-1,cksum)
+
+        frameinfo = getframeinfo(currentframe())
+        print(f'{frameinfo.filename}:{frameinfo.lineno}')
+        self._tuning.fdbcs = calc_checksum(self._mmap.get(0x280,0x7f), 0xa5)
+        print(f'fdbcs cksum ',self._tuning.fdbcs)
 
     def _decode_freq(self, freq, step=2):
         return int(freq) * STEP[int(step)] + self._tuning.base_freq * 25000
@@ -1010,7 +1084,7 @@ class WarisRadio(WarisBase):
             23: "Personality names",
             24: "LS Trunking button assignments",
             # 24 total in non-LS version, cp version 1.x
-            # 31 in W9CR RED LS version, cp version 2.x
+            # 31 in W9CR RED LS version, cp version 2.x also cdm1550 ls+ with passport 
             # 37 in PMUD1494C, cp version 4.x
             # 32 in PMUE1929D, cp version 11.0
         }
@@ -1055,11 +1129,17 @@ class WarisRadio(WarisBase):
     def update_checksums(self):
         super(WarisRadio, self).update_checksums()
         for i, c in enumerate(self._prog):
+            frameinfo = getframeinfo(currentframe())
+            print(f'{frameinfo.filename}:{frameinfo.lineno}')
             print("section %d: %x %x" % (i, c.checksum, c.calc_checksum()))
-        cs_addr = 0x300 + self._memobj.programming_length
+            print(repr(c))
+        cs_len = self._memobj.programming_length.get_value()
+        cs_addr = 0x300 + cs_len
+        print(f'cs_len {cs_len}/0x{cs_len:x}')
+        print(f'cs_addr {cs_addr}/0x{cs_addr:x}')
         print("programming_checksum: %x %x" % (
-            ord(self._mmap[cs_addr] or '\0'),
-            calc_checksum(self._mmap[0x300:cs_addr], 0xa5),
+            ord(self._mmap.get(cs_addr) or '\0'),
+            calc_checksum(self._mmap.get(0x300,cs_len), 0xa5)
         ))
 
     def _personality_assignment_to_zone(self, f):
@@ -1181,6 +1261,8 @@ class WarisRadio(WarisBase):
         _mem.txfreq, _mem.txstep = _mem.rxfreq, _mem.rxstep  # FIXME duplex
 
         _mem.checksum = 0xa5
+        frameinfo = getframeinfo(currentframe())
+        print(f'{frameinfo.filename}:{frameinfo.lineno}')
         _mem.checksum = calc_checksum(_mem.get_raw())
 
     def _set_name(self, mem):
@@ -1338,7 +1420,7 @@ class SrecFile(WarisRadio, chirp_common.FileBackedRadio):
             raise errors.RadioError(str(e))
 
         b = bincopy.BinFile()
-        with file(filename, "rb") as f:
+        with open(filename, "rb") as f:
             self._header = f.read(0x322)
             b.add_srec(f.read())
             self._sheader = b.as_binary()[:5]
@@ -1358,7 +1440,7 @@ class SrecFile(WarisRadio, chirp_common.FileBackedRadio):
 
         b = bincopy.BinFile()
         b.add_binary(self._mmap.get_packed())
-        with file(filename, "wb") as f:
+        with open(filename, "wb") as f:
             f.write(self._header)
             f.write(self._shreader)
             f.write(b.as_srec())
