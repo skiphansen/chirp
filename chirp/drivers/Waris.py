@@ -18,7 +18,6 @@
 # 2020-10-20    DH      Added control head support 
 # 2021-04-02    DH      Added this header
 
-#from StringIO import StringIO
 import io
 import struct
 from time import sleep
@@ -366,28 +365,6 @@ SECTION_NAMES = [
 ] + ["Unknown"] * 6
 
 
-class DynamicMemoryMap(memmap.MemoryMap):
-    def set(self, pos, value):
-        """Set a chunk of memory at @pos to @value"""
-        if isinstance(value, int):
-            self._data[pos] = chr(value)
-        elif isinstance(value, bytearray):
-            self._data = value
-        elif isinstance(value, str):
-            for byte in value:
-                try:
-                    self._data[pos] = byte
-                except IndexError:
-                    self._data.append(byte)
-                pos += 1
-        else:
-            raise ValueError("Unsupported type %s for value" %
-                             type(value).__name__)
-
-        def GetString(self):
-            yield self._data.decode('utf-8')
-
-
 # data: chr or bytearray
 def calc_checksum(data, cs=0):
     offset = 0
@@ -530,12 +507,7 @@ def do_download(radio):
     mapfile.write(bytes(data[:radio._memsize]))
     mapfile.close()
     print('saved ~/e.bin')
-
-    TheMap = DynamicMemoryMap(bytes(data))
-    #print('Memory map:\n' + TheMap.printable() + '\n')
-
-    return TheMap
-
+    return memmap.MemoryMapBytes(bytes(data))
 
 def do_upload(radio, start=0x300):
     do_connect(radio)
@@ -550,33 +522,15 @@ def do_upload(radio, start=0x300):
         radio.status_fn(status)
     reboot_radio(radio)
 
-
-# read.encode() is a problem ... 2 bytes in 3 bytes out
-#def _find_blocks(mmap):
-#    f = io.StringIO(mmap.get_packed())
-#    #f = io.StringIO(bitwise.string_straight_encode(mmap.get_byte_compatible()))
-#
-#    while True:
-#        read = f.read(2)
-#        if read == "":
-#            break
-##        block_length = int(bitwise.parse("u16 length;", read.encode()))
-#        blotto = bitwise.parse("u16 length;", read.encode())
-#        block_length = int(blotto['length'])
-#        print(f'block_length {block_length}')
-#        yield f.tell()
-#        f.read(block_length - 2)
-
 def _find_blocks(mmap):
-    f = io.StringIO(mmap.get_packed())
-    #f = io.StringIO(bitwise.string_straight_encode(mmap.get_byte_compatible()))
+    f = io.BytesIO(mmap.get_packed())
 
     while True:
         read = f.read(2)
-        if read == "":
+        if len(read) < 2:
             break
         #block_length = int(bitwise.parse("u16 length;", read.encode()))
-        blotto = bitwise.parse("u16 length;", bitwise.string_straight_encode(read))
+        blotto = bitwise.parse("u16 length;", read)
         block_length = int(blotto['length'])
         print(f'block_length {block_length}')
         yield f.tell()
@@ -594,19 +548,12 @@ ARRAY_CHUNK_HEADER = SMALL_CHUNK_HEADER + "\nu16 membersize;"
 
 class Chunk:
     def calc_checksum(self):
-        packed_hdr = bitwise.string_straight_decode(self.header._data.get_packed())
-        #print(f'packed_hdr {hexprint(packed_hdr)}')
-        packed_data = self.data.get_packed()
-        #print(f'packed_data {hexprint(packed_data)}')
-        data = chr(self.header_type) + packed_hdr + packed_data
-        #print(f'data {hexprint(data)}')
-        byte_data = bitwise.string_straight_encode(data)
-        print(f'byte_data {hexprint(byte_data)}')
-
-        return calc_checksum(byte_data, 0xa5)
+        data = self.header_type.to_bytes(1,'big') + self.header._data.get(0,-1) + self.data
+        print(f'Chunk.calc_checksum byte_data {hexprint(data)}')
+        return calc_checksum(data, 0xa5)
 
     def parse(self, memformat):
-        self._memobj = bitwise.parse(memformat, bytes(self.data._data))
+        self._memobj = bitwise.parse(memformat, self.data)
         return self._memobj
 
     def update_lengths(self):
@@ -618,11 +565,9 @@ class Chunk:
         frameinfo = getframeinfo(currentframe())
         print(f'{frameinfo.filename}:{frameinfo.lineno}')
         self.checksum = self.calc_checksum()
-#        return chr(self.header_type) + bitwise.string_straight_decode(self.header._data.get_packed()) + \
-#            bitwise.string_straight_decode(self.data.get_packed()) + chr(self.checksum)
-        char_hdr = bitwise.string_straight_decode(self.header._data.get_packed())
-        char_data = self.data.get_packed()
-        return chr(self.header_type) + char_hdr + char_data + chr(self.checksum)
+        return bytearray(self.header_type.to_bytes(1,'big')
+                         + self.header._data[0:] + self.data[0:]
+                         + self.checksum.to_bytes(1,'big'))
 
     def validate(self):
         assert self.checksum == self.calc_checksum()
@@ -636,7 +581,7 @@ class Chunk:
             "header_type: 0x%02x" % self.header_type,
             repr(self.header),
             "data @ 0x%04x" % self.offset,
-            hexprint(self.data.get_packed()),
+            hexprint(self.data),
             "checksum: 0x%02x" % self.checksum,
             "calc_checksum: 0x%02x" % self.calc_checksum(),
             "end @ 0x%04x\n" % self.end,
@@ -644,7 +589,7 @@ class Chunk:
 
 
 def _find_chunks(mmap, start=0x00):
-    f = io.StringIO(mmap.get_packed())
+    f = io.BytesIO(mmap.get_packed())
     f.seek(start)
     while True:
         chunk = Chunk()
@@ -669,10 +614,11 @@ def _find_chunks(mmap, start=0x00):
                                          memmap.MemoryMap(f.read(4)))
             chunk.offset = f.tell()
             if chunk.header.length == 0:
-                chunk.data = ""
+                chunk.data = bytearray()
                 for i in range(chunk.header.repeat):
-                    membersize = f.read(1)
-                    chunk.data += membersize + f.read(ord(membersize) * chunk.header.membersize)
+                    membersize = int(f.read(1)[0])
+                    chunk.data.append(membersize)
+                    chunk.data.extend(f.read(membersize * int(chunk.header.membersize)))
             else:
                 chunk.data = f.read(chunk.header.length * chunk.header.repeat + 1)
         elif chunk.header_type == 0xc0:
@@ -694,10 +640,9 @@ def _find_chunks(mmap, start=0x00):
             break  # temporary until we know how to identify the end
             raise ValueError(msg)
 
-        chunk.data = DynamicMemoryMap(chunk.data)
-        chunk.checksum = ord(f.read(1))
+        chunk.checksum = f.read(1)[0]
         chunk.end = f.tell()
-        # print chunk
+        print(chunk)
         yield chunk
 
 
@@ -711,6 +656,7 @@ STEP = [2500, None, 5000, 6250]
 class WarisBase(object):
     VENDOR = "Motorola"
     BAUD_RATE = 9600
+    FORMATS = [directory.register_format('Motorola Waris binary codeplug', '*.bin')]
 
     def get_features(self):
         rf = chirp_common.RadioFeatures()
@@ -762,7 +708,7 @@ class WarisBase(object):
 
         self._tuning = bitwise.parse(TUNING_FORMAT % (
             block_offsets[0],
-            str(self._mmap).index("\xff\xff\xff\xff\x07") + 5,
+            self._mmap.get(0,-1).find(b'\xff\xff\xff\xff\x07') + 5,
             block_offsets[1],
             fdb_offsets[0],
             fdb_offsets[1],
@@ -786,10 +732,13 @@ class WarisBase(object):
 
     def load_mmap(self, filename):
         """Load the radio's memory map from @filename"""
-        mapfile = open(filename, "rb")
-        self._mmap = DynamicMemoryMap(mapfile.read())
-        mapfile.close()
-        self.process_mmap()
+        if filename.lower().endswith('.bin'):
+            mapfile = open(filename, "rb")
+            self._mmap = memmap.MemoryMapBytes(mapfile.read())
+            mapfile.close()
+            self.process_mmap()
+        else:
+            chirp_common.CloneModeRadio.load_mmap(self, filename)
 
     def save_mmap(self, filename):
         """
@@ -798,30 +747,25 @@ class WarisBase(object):
         """
         # _prog: list of Chunk objects
 #        programming = ''.join([x.get_packed() for x in self._prog])
-        programming = ''
+        programming = bytearray()
         for x in self._prog:
-            new_data = x.get_packed()
-            programming += new_data
+            programming.extend(x.get_packed())
         print("programming_length:", hex(0x308 + len(programming)))
         #self._mmap = memmap.MemoryMap(str(self._mmap[:0x308]) + programming)
         #truncated_mm = self._mmap[:0x308]
         #truncated_mm = self._mmap._data[:0x308]
-        truncated_mm = self._mmap.get(0,0x308)
-        print(f'len(truncated_mm) {len(truncated_mm)}/0x{len(truncated_mm):x}')
-        truncated_mm_str = str(truncated_mm)
-        print(f'len(truncated_mm_str) {len(truncated_mm_str)}/0x{len(truncated_mm_str):x}')
-        both = truncated_mm_str + programming
-        print(f'len(both) {len(both)}/0x{len(both):x}')
-        self._mmap = memmap.MemoryMap(both)
+        new_image = self._mmap.get(0,0x308) + programming + self._mmap.get(x.end,self._memsize-x.end)
+#        mapfile = open('/home/skip/ee.bin', "wb")
+#        mapfile.write(new_image)
+#        mapfile.close()
+#        print('saved ~/ee.bin')
+
+        print(f'len(new_image) {len(new_image)}/0x{len(new_image):x}')
+        self._mmap = memmap.MemoryMapBytes(new_image)
         # TODO: update programming_length
         self.update_checksums()
-        try:
-            mapfile = open(filename, "wb")
-            print(f'opened {filename}')
-            mapfile.write(bitwise.string_straight_encode(self._mmap.get_packed()))
-            mapfile.close()
-        except IOError:
-            raise Exception("File Access Error")
+        print(f'Saving img to {filename}')
+        chirp_common.CloneModeRadio.save_mmap(self, filename)
 
     def update_checksums(self):
         data = self._mmap.get(0,0x27f)
@@ -1095,21 +1039,18 @@ class WarisRadio(WarisBase):
 #                       self._memobj.section_map_addr+2])
         section_map_addr = self._memobj['section_map_addr']
         map_length_data = self._mmap.get(section_map_addr,2)
-        map_length_data_b = bitwise.string_straight_encode(map_length_data)
 
-
-        section_map_length, = struct.unpack(">H",map_length_data_b)
+        section_map_length, = struct.unpack(">H",map_length_data)
         self._addr = bitwise.parse("#seekto %d; u16 address[%d];" % (
             self._memobj.section_map_addr+2, section_map_length), self._mmap)
         # layout_rev = dict([(v, k) for k, v in self._programming_layout.items()])
         self._prog = [c for c in _find_chunks(self._mmap, 0x308)]
         self._byaddr = dict([(p.start, p) for p in self._prog])
-        self._map = bitwise.parse(MAP % self._memobj.section_map_addr,
-                                  DynamicMemoryMap(str(self._mmap)))
+        self._map = bitwise.parse(MAP % self._memobj.section_map_addr,self._mmap)
         print(self._map)
-        # for i, c in enumerate(self._prog):
-        #     print "%2d" % i, c.fingerprint(), layout_rev.get(i, '')
-            # print c
+#        for i, c in enumerate(self._prog):
+#            print(f'{i:2d} {c.fingerprint()} {layout_rev.get(i, "")}')
+#            print(c)
 
         channels_adr = int(self._map.addr.channels)
         self._channels = self._byaddr[channels_adr]
@@ -1133,6 +1074,8 @@ class WarisRadio(WarisBase):
             print(f'{frameinfo.filename}:{frameinfo.lineno}')
             print("section %d: %x %x" % (i, c.checksum, c.calc_checksum()))
             print(repr(c))
+            print('---')
+            print('')
         cs_len = self._memobj.programming_length.get_value()
         cs_addr = 0x300 + cs_len
         print(f'cs_len {cs_len}/0x{cs_len:x}')
@@ -1424,10 +1367,9 @@ class SrecFile(WarisRadio, chirp_common.FileBackedRadio):
             self._header = f.read(0x322)
             b.add_srec(f.read())
             self._sheader = b.as_binary()[:5]
-            self._mmap = DynamicMemoryMap(
-                # Add fake tuning + fdb header:
-                "\x02\x80" + "\xff\xff\xff\xff\x07" + "\x00" * 0x279 +
-                str(b.as_binary())[5:])
+        # Add fake tuning + fdb header:
+            fake_hdr = "\x02\x80" + "\xff\xff\xff\xff\x07" + "\x00" * 0x279 + str(b.as_binary())[5:]
+            self._mmap = memmap.MemoryMapBytes(bitwise.string_straight_encode(fake_hdr))
         self.process_mmap()
 
     def save_mmap(self, filename):
