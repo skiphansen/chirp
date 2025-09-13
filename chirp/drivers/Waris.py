@@ -388,7 +388,7 @@ def calc_checksum(data, cs=0):
 
     # print hex(ord(byte)), hex(~cs & 0xff)
     ret = ~cs & 0xff
-    print(f'returning 0x{ret:x} offset 0x{offset-1:x}')
+    #print(f'returning 0x{ret:x} offset 0x{offset-1:x}')
     return ~cs & 0xff
 
 def _write(radio, data):
@@ -483,7 +483,6 @@ def do_connect(radio):
 
 def do_download(radio):
     do_connect(radio)
-
     if not radio._memsize:
         # get programming length
         programming_length, = struct.unpack(
@@ -502,11 +501,12 @@ def do_download(radio):
         if len(data) >= radio._memsize:
             print(f'stopped reading @ 0x{offset:x}, 0x{len(data):x} > 0x{radio._memsize:x}')
             break
-
+#debug only
     mapfile = open('/home/skip/e.bin', "wb")
     mapfile.write(bytes(data[:radio._memsize]))
     mapfile.close()
     print('saved ~/e.bin')
+
     return memmap.MemoryMapBytes(bytes(data))
 
 def do_upload(radio, start=0x300):
@@ -530,9 +530,8 @@ def _find_blocks(mmap):
         if len(read) < 2:
             break
         #block_length = int(bitwise.parse("u16 length;", read.encode()))
-        blotto = bitwise.parse("u16 length;", read)
-        block_length = int(blotto['length'])
-        print(f'block_length {block_length}')
+        block_length = int(bitwise.parse("u16 length;", read)['length'])
+        print(f'{block_length}/0x{block_length:x} byte block @ 0x{f.tell():x}')
         yield f.tell()
         f.read(block_length - 2)
 
@@ -548,8 +547,8 @@ ARRAY_CHUNK_HEADER = SMALL_CHUNK_HEADER + "\nu16 membersize;"
 
 class Chunk:
     def calc_checksum(self):
-        data = self.header_type.to_bytes(1,'big') + self.header._data.get(0,-1) + self.data
-        print(f'Chunk.calc_checksum byte_data {hexprint(data)}')
+        data = self.header_type.to_bytes(1,'big') + self.header._data.get(0,-1) + self.data.get_packed()
+        #print(f'Chunk.calc_checksum byte_data {hexprint(data)}')
         return calc_checksum(data, 0xa5)
 
     def parse(self, memformat):
@@ -580,8 +579,8 @@ class Chunk:
             "start @ 0x%04x" % self.start,
             "header_type: 0x%02x" % self.header_type,
             repr(self.header),
-            "data @ 0x%04x" % self.offset,
-            hexprint(self.data),
+            "data @ 0x%04x\n" % self.offset,
+            self.data.printable(),
             "checksum: 0x%02x" % self.checksum,
             "calc_checksum: 0x%02x" % self.calc_checksum(),
             "end @ 0x%04x\n" % self.end,
@@ -594,6 +593,7 @@ def _find_chunks(mmap, start=0x00):
     while True:
         chunk = Chunk()
         chunk.start = f.tell()
+        data = bytearray()
 
         byte = f.read(1)
         if byte == "":
@@ -608,30 +608,29 @@ def _find_chunks(mmap, start=0x00):
             chunk.header = bitwise.parse(SMALL_CHUNK_HEADER,
                                          memmap.MemoryMap(f.read(2)))
             chunk.offset = f.tell()
-            chunk.data = f.read((chunk.header.length) * (chunk.header.repeat or 1))
+            data.extend(f.read((chunk.header.length) * (chunk.header.repeat or 1)))
         elif chunk.header_type == 0x84:
             chunk.header = bitwise.parse(ARRAY_CHUNK_HEADER,
                                          memmap.MemoryMap(f.read(4)))
             chunk.offset = f.tell()
             if chunk.header.length == 0:
-                chunk.data = bytearray()
                 for i in range(chunk.header.repeat):
                     membersize = int(f.read(1)[0])
-                    chunk.data.append(membersize)
-                    chunk.data.extend(f.read(membersize * int(chunk.header.membersize)))
+                    data.append(membersize)
+                    data.extend(f.read(membersize * int(chunk.header.membersize)))
             else:
-                chunk.data = f.read(chunk.header.length * chunk.header.repeat + 1)
+                data.extend(f.read(chunk.header.length * chunk.header.repeat + 1))
         elif chunk.header_type == 0xc0:
             chunk.header = bitwise.parse(SMALL_CHUNK_HEADER,
                                          memmap.MemoryMap(f.read(2)))
             chunk.offset = f.tell()
-            chunk.data = f.read((chunk.header.length + 1) * chunk.header.repeat)
+            data.extend(f.read((chunk.header.length + 1) * chunk.header.repeat))
             # length + 1 accomodates a checksum after each item
         elif chunk.header_type == 0xc4:
             chunk.header = bitwise.parse(ARRAY_CHUNK_HEADER,
                                          memmap.MemoryMap(f.read(4)))
             chunk.offset = f.tell()
-            chunk.data = f.read((chunk.header.length + 1) * chunk.header.repeat + 1)
+            data.extend((f.read((chunk.header.length + 1) * chunk.header.repeat + 1)))
             # length + 1 accomodates a checksum after each item
         else:
             msg = "Unknown header type: 0x%02X @ 0x%04X" % (
@@ -642,6 +641,8 @@ def _find_chunks(mmap, start=0x00):
 
         chunk.checksum = f.read(1)[0]
         chunk.end = f.tell()
+        chunk.data = memmap.MemoryMapBytes(bytes(data))
+
         print(chunk)
         yield chunk
 
@@ -747,21 +748,18 @@ class WarisBase(object):
         """
         # _prog: list of Chunk objects
 #        programming = ''.join([x.get_packed() for x in self._prog])
-        programming = bytearray()
+        new_image = bytearray(self._mmap.get(0,0x308))
         for x in self._prog:
-            programming.extend(x.get_packed())
-        print("programming_length:", hex(0x308 + len(programming)))
-        #self._mmap = memmap.MemoryMap(str(self._mmap[:0x308]) + programming)
-        #truncated_mm = self._mmap[:0x308]
-        #truncated_mm = self._mmap._data[:0x308]
-        new_image = self._mmap.get(0,0x308) + programming + self._mmap.get(x.end,self._memsize-x.end)
+            new_image.extend(x.get_packed())
+        print(f' Adding _misc {len(self._misc)}/0x{len(self._misc):x} bytes @ 0x{x.end:x}')
+        new_image.extend(self._misc)
 #        mapfile = open('/home/skip/ee.bin', "wb")
 #        mapfile.write(new_image)
 #        mapfile.close()
 #        print('saved ~/ee.bin')
 
         print(f'len(new_image) {len(new_image)}/0x{len(new_image):x}')
-        self._mmap = memmap.MemoryMapBytes(new_image)
+        self._mmap = memmap.MemoryMapBytes(bytes(new_image))
         # TODO: update programming_length
         self.update_checksums()
         print(f'Saving img to {filename}')
@@ -1044,7 +1042,11 @@ class WarisRadio(WarisBase):
         self._addr = bitwise.parse("#seekto %d; u16 address[%d];" % (
             self._memobj.section_map_addr+2, section_map_length), self._mmap)
         # layout_rev = dict([(v, k) for k, v in self._programming_layout.items()])
-        self._prog = [c for c in _find_chunks(self._mmap, 0x308)]
+        self._prog = []
+        for c in _find_chunks(self._mmap, 0x308):
+            self._prog.append(c)
+        misc_len = 0x300 + self._memobj.programming_length - c.end
+        self._misc = self._mmap.get(c.end,misc_len)
         self._byaddr = dict([(p.start, p) for p in self._prog])
         self._map = bitwise.parse(MAP % self._memobj.section_map_addr,self._mmap)
         print(self._map)
@@ -1185,7 +1187,7 @@ class WarisRadio(WarisBase):
         return mem
 
     def _get_name(self, i):
-        return str(self._channel_names._memobj.personalitynames[i].name).rstrip()
+        return str(self._channel_names._memobj.personalitynames[i].name).rstrip('\x00')
 
     def set_memory(self, mem):
         _mem = self._channels._memobj.personality[mem.number - 1]
