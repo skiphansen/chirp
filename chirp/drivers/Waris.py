@@ -749,14 +749,12 @@ class WarisBase(object):
         # _prog: list of Chunk objects
 #        programming = ''.join([x.get_packed() for x in self._prog])
         new_image = bytearray(self._mmap.get(0,0x308))
-        for x in self._prog:
-            new_image.extend(x.get_packed())
-        print(f' Adding _misc {len(self._misc)}/0x{len(self._misc):x} bytes @ 0x{x.end:x}')
-        new_image.extend(self._misc)
-#        mapfile = open('/home/skip/ee.bin', "wb")
-#        mapfile.write(new_image)
-#        mapfile.close()
-#        print('saved ~/ee.bin')
+
+        if not issubclass(self.__class__,WarisTuningRadio):
+            for x in self._prog:
+                new_image.extend(x.get_packed())
+            print(f' Adding _misc {len(self._misc)}/0x{len(self._misc):x} bytes @ 0x{x.end:x}')
+            new_image.extend(self._misc)
 
         print(f'len(new_image) {len(new_image)}/0x{len(new_image):x}')
         self._mmap = memmap.MemoryMapBytes(bytes(new_image))
@@ -1247,6 +1245,14 @@ class WarisRadio(WarisBase):
             prog.append(rs)
         except (InvalidValueError, KeyError):
             pass
+
+        if not issubclass(self.__class__,WarisTuningRadio):
+            for val in tuning.walk():
+                val[0].set_mutable(False)
+            for val in fdb.walk():
+                val[0].set_mutable(False)
+            for val in prog.walk():
+                val[0].set_mutable(False)
 
         return RadioSettings(tuning, fdb, prog)
 
