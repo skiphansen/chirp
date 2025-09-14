@@ -839,17 +839,18 @@ class WarisBase(object):
         tuning.append(rsg)
 
         squelch_sections = (
-            ("squelch12", "Squelch Attn. 12.5 KHz", _mem.squelch12),
-            ("squelch20", "Squelch Attn. 20 KHz",   _mem.squelch20),
-            ("squelch25", "Squelch Attn. 25 KHz",   _mem.squelch25),
+            ("frontendfilter", "front end filter tuning", _mem.frontendfilter,127),
+            ("squelch12", "Squelch Attn. 12.5 KHz", _mem.squelch12,63),
+            ("squelch20", "Squelch Attn. 20 KHz",   _mem.squelch20,63),
+            ("squelch25", "Squelch Attn. 25 KHz",   _mem.squelch25,63),
         )
-        for name, shortname, mem in squelch_sections:
+        for name, shortname, mem, max_val in squelch_sections:
             rsg = RadioSettingGroup(name, shortname)
             for i, freq in enumerate(rx_point_str):
                 rs = RadioSetting(
                     "%s/%d" % (name, i),
                     freq,
-                    RadioSettingValueInteger(0, 63, int(mem[i])))
+                    RadioSettingValueInteger(0, max_val, int(mem[i])))
                 rsg.append(rs)
             tuning.append(rsg)
 
