@@ -796,6 +796,69 @@ class WarisBase(object):
     def _set_pier(self, setting, obj, i):
         obj[i] = self._encode_freq(setting.value.get_value() * 1e6, 2)
 
+    def _offset_freq(self, value, offset):
+        freq = self._decode_freq(value, 2)
+        freq += offset
+        return self._encode_freq(freq, 2)
+
+    def _auto_convert(self, mem):
+    # move all existing tuning values up one slot to make room for new ham
+    # band slot at entry 0
+        mem = self._memobj
+        freq_offset = -10000000
+        mem.lower_limit = self._offset_freq(mem.lower_limit,freq_offset)
+        mem.upper_limit = self._offset_freq(mem.upper_limit,freq_offset)
+        lower_limit = self._decode_freq(mem.lower_limit,2)
+
+        pier0 = self._decode_freq(mem.rxpier[0])
+        pier1 = self._decode_freq(mem.rxpier[1])
+        scale_rx_adj = abs(freq_offset) / (pier1 - pier0)
+
+        pier0 = self._decode_freq(mem.txpier[0])
+        pier1 = self._decode_freq(mem.txpier[1])
+        scale_tx_adj = abs(freq_offset) / (pier1 - pier0)
+
+        for i in range(6,0,-1):
+            mem.rxpier[i] = mem.rxpier[i-1]
+            mem.txpier[i] = mem.txpier[i-1]
+            mem.testfreq[i*2] = mem.testfreq[(i * 2) - 2]
+            mem.testfreq[(i*2) + 1] = mem.testfreq[(i * 2) - 1]
+
+        mem.rxpier[0] = self._offset_freq(mem.rxpier[0],freq_offset)
+        mem.txpier[0] = self._offset_freq(mem.txpier[0],freq_offset)
+        mem.testfreq[0] = self._offset_freq(mem.testfreq[2],freq_offset)
+        mem.testfreq[1] = self._offset_freq(mem.testfreq[3],freq_offset)
+
+        tuning_items = (
+            (mem.vcoattn25,127,False),
+            (mem.modbalattn,63,True),
+            (mem.kvalues,256,True),
+            (mem.mvalues,256,True),
+            (mem.unknownvalues,256,False),
+            (mem.frontendfilter,127,False),
+            (mem.squelch12,63,False),
+            (mem.squelch20,63,False),
+            (mem.squelch25,63,False))
+        for item in tuning_items:
+            value = item[0]
+            max_value = item[1]
+
+            for i in range(6,0,-1):
+                value[i] = value[i-1]
+            value[0] = value[1]
+            delta = value[1] - value[2]
+            if not delta == 0:
+                if item[2]:
+                    delta *= scale_tx_adj
+                else:
+                    delta *= scale_rx_adj
+                delta = round(delta)
+                value[0] += delta
+                if(value[0] > max_value):
+                    value[0] = max_value
+                elif value[0] < 0:
+                    value[0] = 0
+
     def _set_limit(self, setting, obj, name):
         setattr(obj, name,
                 self._encode_freq(setting.value.get_value() * 1e6, 2))
@@ -803,6 +866,17 @@ class WarisBase(object):
     def get_tuning_settings(self):
         _mem = self._tuning
         tuning = RadioSettingGroup("tuning", "Tuning")
+
+        if self._decode_freq(self._tuning.lower_limit, 2) == 450000000:
+            convert = RadioSetting(
+                'auto_convert','Adjust tuning to cover 440 Mhz to 510 Mhz',
+                RadioSettingValueBoolean(False))
+            convert.set_apply_callback(self._auto_convert)
+            convert.set_warning(
+                _('Before modifing your tuning data make sure you have '
+                  'a backup the of the unmodified tuning data!'),
+                safe_value=False)
+            tuning.append(convert)
 
         rxpiers = [self._decode_freq(_mem.rxpier[i]) / 1e6 for i in range(7)]
         txpiers = [self._decode_freq(_mem.txpier[i]) / 1e6 for i in range(7)]
@@ -839,7 +913,7 @@ class WarisBase(object):
         tuning.append(rsg)
 
         squelch_sections = (
-            ("frontendfilter", "front end filter tuning", _mem.frontendfilter,127),
+            ("frontendfilter", "front end filter", _mem.frontendfilter,127),
             ("squelch12", "Squelch Attn. 12.5 KHz", _mem.squelch12,63),
             ("squelch20", "Squelch Attn. 20 KHz",   _mem.squelch20,63),
             ("squelch25", "Squelch Attn. 25 KHz",   _mem.squelch25,63),
@@ -1247,13 +1321,12 @@ class WarisRadio(WarisBase):
         except (InvalidValueError, KeyError):
             pass
 
-        if not issubclass(self.__class__,WarisTuningRadio):
-            for val in tuning.walk():
-                val[0].set_mutable(False)
-            for val in fdb.walk():
-                val[0].set_mutable(False)
-            for val in prog.walk():
-                val[0].set_mutable(False)
+        for val in tuning.walk():
+            val[0].set_mutable(False)
+        for val in fdb.walk():
+            val[0].set_mutable(False)
+        for val in prog.walk():
+            val[0].set_mutable(False)
 
         return RadioSettings(tuning, fdb, prog)
 
