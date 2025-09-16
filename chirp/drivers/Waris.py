@@ -804,6 +804,7 @@ class WarisBase(object):
     # move all existing tuning values up one slot to make room for new ham
     # band slot at entry 0
         mem = self._memobj
+        mem.conventional = 255
         freq_offset = -10000000
         mem.lower_limit = self._offset_freq(mem.lower_limit,freq_offset)
         mem.upper_limit = self._offset_freq(mem.upper_limit,freq_offset)
