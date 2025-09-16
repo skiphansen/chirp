@@ -430,13 +430,12 @@ def _request_frame(radio, offset, size):
 
 def _write_chunk(radio, offset, data):
     # send WRITE_DATA_REQ
-    frame = "\xff\x17" + struct.pack(">HBH", len(data) + 4, 0, offset) + data
-    frame += chr(calc_checksum(frame))
+    frame = create_frame(bytearray(b'\xff\x17') + struct.pack(">HBH", len(data) + 4, 0, offset) + data)
     _write(radio, frame)
     resp = radio.pipe.read(1)
     print("resp:")
     print(hexprint(resp))
-    if resp != 'P':
+    if resp != b'P':
         raise errors.RadioError('Radio did not acknowledge write.')
     ack = radio.pipe.read(6)
     print("F4 84 00 addr cs:")
@@ -447,7 +446,7 @@ def _write_chunk(radio, offset, data):
 
 
 def reboot_radio(radio):
-    radio.pipe.write("\xF1\x10\xFE")
+    radio.pipe.write(b'\xF1\x10\xFE')
 
 def create_frame(data):
     frame = bytearray(data)
@@ -834,7 +833,6 @@ class WarisBase(object):
             (mem.modbalattn,63,True),
             (mem.kvalues,256,True),
             (mem.mvalues,256,True),
-            (mem.unknownvalues,256,False),
             (mem.frontendfilter,127,False),
             (mem.squelch12,63,False),
             (mem.squelch20,63,False),
@@ -858,6 +856,8 @@ class WarisBase(object):
                     value[0] = max_value
                 elif value[0] < 0:
                     value[0] = 0
+        self.update_checksums()
+
 
     def _set_limit(self, setting, obj, name):
         setattr(obj, name,
