@@ -829,25 +829,13 @@ class WarisBase(object):
         mem.testfreq[0] = self._offset_freq(mem.testfreq[2],freq_offset)
         mem.testfreq[1] = self._offset_freq(mem.testfreq[3],freq_offset)
 
-        tuning_items = (
-            (mem.vcoattn25,127,False),
-            (mem.modbalattn,63,True),
-            (mem.kvalues,256,True),
-            (mem.mvalues,256,True),
-            (mem.frontendfilter,127,False),
-            (mem.squelch12,63,False),
-            (mem.squelch20,63,False),
-            (mem.squelch25,63,False))
-        for item in tuning_items:
-            value = item[0]
-            max_value = item[1]
-
+        for value, max_value, tx_val in self._tuning_items:
             for i in range(6,0,-1):
                 value[i] = value[i-1]
             value[0] = value[1]
             delta = value[1] - value[2]
             if not delta == 0:
-                if item[2]:
+                if tx_val:
                     delta *= scale_tx_adj
                 else:
                     delta *= scale_rx_adj
@@ -892,6 +880,7 @@ class WarisBase(object):
 
     def get_tuning_settings(self):
         _mem = self._tuning
+
         tuning = RadioSettingGroup("tuning", "Tuning")
 
         rxpiers = [self._decode_freq(_mem.rxpier[i]) / 1e6 for i in range(7)]
@@ -928,13 +917,16 @@ class WarisBase(object):
             rsg.append(rs)
         tuning.append(rsg)
 
-        squelch_sections = (
-            ("frontendfilter", "front end filter", _mem.frontendfilter,127),
+        per_pier_valuse = (
+            ("vcoattn25", "VCO Attenuation 25 Khz", _mem.vcoattn25,127),
+            ("modbalattn", "front end filter", _mem.modbalattn,63),
+            ("kvalues", "transmit power K value", _mem.kvalues,256),
+            ("mvalues", "transmit power M value", _mem.mvalues,256),
             ("squelch12", "Squelch Attn. 12.5 KHz", _mem.squelch12,63),
             ("squelch20", "Squelch Attn. 20 KHz",   _mem.squelch20,63),
             ("squelch25", "Squelch Attn. 25 KHz",   _mem.squelch25,63),
         )
-        for name, shortname, mem, max_val in squelch_sections:
+        for name, shortname, mem, max_val in per_pier_valuse:
             rsg = RadioSettingGroup(name, shortname)
             for i, freq in enumerate(rx_point_str):
                 rs = RadioSetting(
@@ -944,11 +936,16 @@ class WarisBase(object):
                 rsg.append(rs)
             tuning.append(rsg)
 
-        rs = RadioSetting(
-            "ratedvolume",
-            "Rated Volume %.3f MHz" % center_freq,
-            RadioSettingValueInteger(0, 255, int(_mem.ratedvolume)))
-        tuning.append(rs)
+        tuning_ints = (
+            (_mem.mdc1200level,'mdc1200level','MDC1200 signalling',31),
+            (_mem.dtmflevel,'dtmflevel','DTMF signalling',31),
+            (_mem.targetvoltage,'targetvoltage','Battery Threshold',255),
+            (_mem.ratedvolume,'ratedvolume',"Rated Volume %.3f MHz" % center_freq,255))
+
+        for mem, name, shortname, max_val in tuning_ints:
+            rs = RadioSetting("%s" % name,shortname,
+                RadioSettingValueInteger(0, max_val, int(mem)))
+            tuning.append(rs)
 
         return tuning
 
@@ -1371,6 +1368,15 @@ class WarisTuningRadio(WarisBase, chirp_common.CloneModeRadio):
         return mem
 
     def get_settings(self):
+        self._tuning_items = (
+            (self._memobj.vcoattn25,127,False),
+            (self._memobj.modbalattn,63,True),
+            (self._memobj.kvalues,256,True),
+            (self._memobj.mvalues,256,True),
+            (self._memobj.frontendfilter,127,False),
+            (self._memobj.squelch12,63,False),
+            (self._memobj.squelch20,63,False),
+            (self._memobj.squelch25,63,False))
         self._Offer_Autoconvert()
         return RadioSettings(self.get_tuning_settings(),
                              self.get_fdb_settings())
