@@ -31,6 +31,7 @@ from chirp.settings import RadioSetting, RadioSettings, RadioSettingGroup, \
                 RadioSettingValueInteger, RadioSettingValueString, \
                 RadioSettingValueFloat, RadioSettingValueMap, InvalidValueError
 from inspect import currentframe, getframeinfo
+import wx
 
 
 TUNING_FORMAT = """
@@ -800,12 +801,11 @@ class WarisBase(object):
         freq += offset
         return self._encode_freq(freq, 2)
 
-    def _auto_convert(self, mem):
+    def _auto_convert(self, freq_offset):
     # move all existing tuning values up one slot to make room for new ham
     # band slot at entry 0
         mem = self._memobj
         mem.conventional = 255
-        freq_offset = -10000000
         mem.lower_limit = self._offset_freq(mem.lower_limit,freq_offset)
         mem.upper_limit = self._offset_freq(mem.upper_limit,freq_offset)
         lower_limit = self._decode_freq(mem.lower_limit,2)
@@ -859,6 +859,32 @@ class WarisBase(object):
                     value[0] = 0
         self.update_checksums()
 
+    def _Offer_Autoconvert(self):
+        self._auto_converted = False
+        lower_limit = self._decode_freq(self._tuning.lower_limit, 2)
+        upper_limit = self._decode_freq(self._tuning.upper_limit, 2)
+        CanTweak = False
+        if lower_limit == 450000000:
+            CanTweak = True;
+            freq_offset = -10000000
+
+        if CanTweak:
+            r = wx.MessageBox('Adjust tuning to cover 440 Mhz to 510 Mhz ?',
+                              _('Auto Adjust'),
+                              wx.YES_NO | wx.CANCEL)
+            if r != wx.YES:
+                return
+
+            r = wx.MessageBox(
+                _('Before modifing your tuning data make sure you have '
+                  'a backup the of the unmodified tuning data!'),
+                _('Auto Adjust'),
+                wx.OK | wx.CANCEL | wx.CANCEL_DEFAULT)
+            if r == wx.CANCEL:
+                return
+
+            self._auto_converted = True
+            self._auto_convert(freq_offset)
 
     def _set_limit(self, setting, obj, name):
         setattr(obj, name,
@@ -867,17 +893,6 @@ class WarisBase(object):
     def get_tuning_settings(self):
         _mem = self._tuning
         tuning = RadioSettingGroup("tuning", "Tuning")
-
-        if self._decode_freq(self._tuning.lower_limit, 2) == 450000000:
-            convert = RadioSetting(
-                'auto_convert','Adjust tuning to cover 440 Mhz to 510 Mhz',
-                RadioSettingValueBoolean(False))
-            convert.set_apply_callback(self._auto_convert)
-            convert.set_warning(
-                _('Before modifing your tuning data make sure you have '
-                  'a backup the of the unmodified tuning data!'),
-                safe_value=False)
-            tuning.append(convert)
 
         rxpiers = [self._decode_freq(_mem.rxpier[i]) / 1e6 for i in range(7)]
         txpiers = [self._decode_freq(_mem.txpier[i]) / 1e6 for i in range(7)]
@@ -1356,6 +1371,7 @@ class WarisTuningRadio(WarisBase, chirp_common.CloneModeRadio):
         return mem
 
     def get_settings(self):
+        self._Offer_Autoconvert()
         return RadioSettings(self.get_tuning_settings(),
                              self.get_fdb_settings())
 
