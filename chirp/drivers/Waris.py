@@ -44,7 +44,7 @@ u8 modbalattn[7];
 u8 kvalues[7];
 u8 mvalues[7];
 u8 unknownvalues[7];
-u8 powerlevels[2];
+u8 powerlevels[3];
 #seekto 0x47;
 u8 mdc1200level;
 u8 dtmflevel;
@@ -937,10 +937,13 @@ class WarisBase(object):
             tuning.append(rsg)
 
         tuning_ints = (
-            (_mem.mdc1200level,'mdc1200level','MDC1200 signalling',31),
-            (_mem.dtmflevel,'dtmflevel','DTMF signalling',31),
+            (_mem.mdc1200level,'mdc1200level',"MDC1200 signalling @ %.3f MHz" % center_freq,31),
+            (_mem.dtmflevel,'dtmflevel',"DTMF signalling @ %.3f Mhz" % txpiers[0],31),
+            (_mem.ratedvolume,'ratedvolume',"Rated Volume @ %.3f MHz" % center_freq,255),
             (_mem.targetvoltage,'targetvoltage','Battery Threshold',255),
-            (_mem.ratedvolume,'ratedvolume',"Rated Volume %.3f MHz" % center_freq,255))
+            (_mem.powerlevels[0],'powerlevels_0','Power Level High',127),
+            (_mem.powerlevels[1],'powerlevels_1','PA Bias2(High)',255),
+            (_mem.powerlevels[2],'powerlevels_2','PA Bias3(High)',255))
 
         for mem, name, shortname, max_val in tuning_ints:
             rs = RadioSetting("%s" % name,shortname,
