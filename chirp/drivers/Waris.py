@@ -253,8 +253,9 @@ struct {
   u16 rxtone;
   u8 rxtonemode:2,  // ('CSQ', 'TPL', 'DPL')
      txtonemode:2,  // ('CSQ', 'TPL', 'DPL')
-     txdplinvert:1, // not certain
-     unknown2a:2,   // rx DPL invert?
+     txdplinvert:1,
+     rxdplinvert:1,
+     unknown2a:1,
      bcl:1;
   u8 unknown3a:1,
      autoscan:1,
@@ -1255,7 +1256,7 @@ class WarisRadio(WarisBase):
         chirp_common.split_tone_decode(
             mem,
             self._decode_tone(_mem.txtonemode, _mem.txtone, _mem.txdplinvert),
-            self._decode_tone(_mem.rxtonemode, _mem.rxtone))
+            self._decode_tone(_mem.rxtonemode, _mem.rxtone, _mem.rxdplinvert))
 
         def_offset = self.bandplans.get_defaults_for_frequency(mem.freq).offset
         txfreq = self._decode_freq(_mem.txfreq, _mem.txstep)
@@ -1293,6 +1294,29 @@ class WarisRadio(WarisBase):
 
         _mem.rxfreq, _mem.rxstep = self._encode_freq(mem.freq)
         _mem.txfreq, _mem.txstep = _mem.rxfreq, _mem.rxstep  # FIXME duplex
+
+        for y, z in enumerate(chirp_common.split_tone_encode(mem)):
+            type, value,invert = z
+            if y == 0:  # TX values
+                if type == 'Tone':
+                    _mem.txtonemode = 1
+                    _mem.txtone = value * 10
+                elif type == 'DTCS':
+                    _mem.txtonemode = 2
+                    _mem.txtone = chirp_common.ALL_DTCS_CODES.index(value) + 0x800
+                    _mem.txdplinvert = invert == 'R' and 1 or 0
+                else:
+                    _mem.txtonemode = 0
+            else:       # RX values
+                if type == 'Tone':
+                    _mem.rxtonemode = 1
+                    _mem.rxtone = value * 10
+                elif type == 'DTCS':
+                    _mem.rxtonemode = 2
+                    _mem.rxtone = chirp_common.ALL_DTCS_CODES.index(value) + 0x800
+                    _mem.rxdplinvert = invert == 'R' and 1 or 0
+                else:
+                    _mem.rxtonemode = 0
 
         _mem.checksum = 0xa5
         frameinfo = getframeinfo(currentframe())
