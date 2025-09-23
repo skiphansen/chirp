@@ -73,7 +73,7 @@ radio using the universal tuner software for ultimate performance.
 
 Not supported currently, but easy to add.
 
-Please open a [**PR**](https://github.com/skiphansen/chirp/pulls) if you have a low band radio and are willing to help add support.
+Please open a [**issue**](https://github.com/skiphansen/chirp/issues) if you have a low band radio and are willing to help add support.
 
 **NB:** component changes are necessary to cover the entire 6m Ham band, see W9CR's [wiki](https://wiki.w9cr.net/index.php/Waris#CDM_Low_Band_Range_3_to_46-54_MHz) for more information.
 
