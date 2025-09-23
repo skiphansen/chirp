@@ -39,6 +39,14 @@ Since the Motorola CPS for the Waris is "out there" and runs well on a
 modern system (Windows 10 VM running under Windows 11), I see little reason
 in expending further effort with this driver.
 
+# Usage
+
+If you are already using a recent version of Chirp you can enable deverloper mode and manually load the Waris [driver](https://github.com/skiphansen/chirp/blob/waris_py3_port/chirp/drivers/Waris.py).
+
+You can run also run the entire project in the usual way.
+
+See the [CHIRP](https://www.chirpmyradio.com) website for documentation.
+
 # Converting 450-520 Mhz to 440-510 Mhz
 
 I've added an auto convert function to the driver.  When you download the tuning
@@ -64,4 +72,8 @@ radio using the universal tuner software for ultimate performance.
 # Converting 42-50 Mhz to 46-54 MHz
 
 Not supported currently, but easy to add.
+
+Please open a [**PR**](https://github.com/skiphansen/chirp/pulls) if you have a low band radio and are willing to help add support.
+
+**NB:** component changes are necessary to cover the entire 6m Ham band, see W9CR's [wiki](https://wiki.w9cr.net/index.php/Waris#CDM_Low_Band_Range_3_to_46-54_MHz) for more information.
 
