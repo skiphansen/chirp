@@ -331,21 +331,31 @@ MAP = """
 u16 section_map_length;
 struct {
     // these are pointers to feature sections. #seekto their values.
-    u16 fdb1;
-    u16 fdb2;
-    u16 fdb_unknown[6];
-    u16 codeplug_version_and_date;
-    u16 settings;
-    u16 personality_assignment_to_zone;
-    u16 zone_names;
-    u16 settings2;
-    u16 phone_numbers;
-    u16 phone_names;
-    u16 unknown1;
-    u16 scan_list_members;
-    u16 unknown[31];
-    u16 channels;
-    u16 channel_names;
+    u16 fdb1;                           // 0
+    u16 fdb2;                           // 1
+    u16 fdb_unknown[6];                 // 2,3,4,5,6,7
+    u16 codeplug_version_and_date;      // 8
+    u16 settings;                       // 9
+    u16 personality_assignment_to_zone; // 10
+    u16 zone_names;                     // 11
+    u16 settings2;                      // 12
+    u16 phone_numbers;                  // 13
+    u16 phone_names;                    // 14
+    u16 unknown1;                       // 15
+    u16 scan_list_members;              // 16
+    u16 unknown2[2];                    // 17,18
+    u16 mdc_call;                       // 19
+    u16 dtmf_call;                      // 20
+    u16 qc_call;                        // 21
+    u16 mdc_msg;                        // 22
+    u16 mdc_status;                     // 23
+    u16 unknown3;                       // 24
+    u16 mdc_system;                     // 25 ?
+    u16 unknown4[3];                    // 26,27, 28
+    u16 button_assignments;             // 29
+    u16 unknown[18];                    // 30 -> 46
+    u16 channels;                       // 47
+    u16 channel_names;                  // 48
 } addr;
 """
 SECTION_NAMES = [
@@ -539,7 +549,7 @@ def _find_blocks(mmap):
 
 
 CHUNK_HEADER = """
-%s length;
+%s length;  // not including checksum byte at end of every
 %s repeat;
 """
 SMALL_CHUNK_HEADER = CHUNK_HEADER % ("u8", "u8")
@@ -574,6 +584,12 @@ class Chunk:
 
     def fingerprint(self):
         return map(hex, map(int, [self.header_type, self.header.length]))
+
+    def extend(self,new_entry):
+        assert self.header.repeat  < 255
+        assert len(new_entry) - 1 == self.header.length
+        self.data = memmap.MemoryMapBytes(self.data.get(0,-1) + new_entry)
+        self.header.repeat += 1
 
     def __repr__(self):
         return "\n".join([
@@ -1096,25 +1112,25 @@ class WarisRadio(WarisBase):
     def process_mmap(self):
         super(WarisRadio, self).process_mmap()
         prog_chunk_names = {
-            0: "Codeplug version and programming date",
-            1: "Radio Configuration (settings)",
-            2: "Personality assignment to zone",
-            3: "Zone names",
-            4: "Radio Configuration (Radio Password, language)",
-            5: "Phone numbers",
-            7: "Phone names",
-            9: "Scan list members",
+            8: "Codeplug version and programming date",
+            9: "Radio Configuration (settings)",
+            10: "Personality assignment to zone",
+            11: "Zone names",
+            12: "Radio Configuration (Radio Password, language)",
+            13: "Phone numbers",
+            15: "Phone names",
+            17: "Scan list members",
             # 12: unknown exists on W9CR red but not KD7LXL
-            12: "MDC Call",
-            13: "DTMF Call",
-            14: "QC Call",
-            15: "MDC Message",
-            16: "MDC Status",
-            18: "MDC System?",
-            21: "Personalties",
-            22: "Button assignments",
-            23: "Personality names",
-            24: "LS Trunking button assignments",
+            21: "MDC Call",
+            22: "DTMF Call",
+            23: "QC Call",
+            24: "MDC Message",
+            25: "MDC Status",
+            27: "MDC System?",
+            30: "Personalties",
+            31: "Button assignments",
+            32: "Personality names",
+            33: "LS Trunking button assignments",
             # 24 total in non-LS version, cp version 1.x
             # 31 in W9CR RED LS version, cp version 2.x also cdm1550 ls+ with passport 
             # 37 in PMUD1494C, cp version 4.x
@@ -1136,10 +1152,33 @@ class WarisRadio(WarisBase):
         for c in _find_chunks(self._mmap, 0x308):
             self._prog.append(c)
         misc_len = 0x300 + self._memobj.programming_length - c.end
+        print(f'misc {misc_len}/0x{misc_len:x} bytes @ {c.end:x}')
+
         self._misc = self._mmap.get(c.end,misc_len)
         self._byaddr = dict([(p.start, p) for p in self._prog])
+
+        section_map_addr = self._memobj.section_map_addr
+
+        misc1_len = section_map_addr - c.end
+
         self._map = bitwise.parse(MAP % self._memobj.section_map_addr,self._mmap)
+        print(f'misc1 data @ 0x{c.end:x} for 0x{misc1_len:x} bytes:')
+        misc1_data = self._mmap.get(c.end,misc1_len)
+        print(hexprint(misc1_data))
+        print('')
+
+        section_map_length = self._map.section_map_length
+        print(f'Section map @ {section_map_addr} for {section_map_length}:')
         print(self._map)
+        print('')
+
+        misc2_adr = c.end + misc1_len + section_map_length
+        misc2_len = misc_len - misc1_len - section_map_length
+
+        print(f'misc2 data @ 0x{misc2_adr:x} for 0x{misc2_len:x} bytes:')
+        misc2_data = self._mmap.get(misc2_adr,misc2_len)
+        print(hexprint(misc2_data))
+
 #        for i, c in enumerate(self._prog):
 #            print(f'{i:2d} {c.fingerprint()} {layout_rev.get(i, "")}')
 #            print(c)
@@ -1287,10 +1326,25 @@ class WarisRadio(WarisBase):
             return
 
         if mem.number > self._num_personality:
-            _mem.set_raw('\xccKPKP\xcf\x00\x00\x00\x00\x00\x08\x074'
-                         '\x11\x00\x00\xff\x00\x00\x00\x00\x00\xff7')
-            self._num_personality = mem.number
-            self._channels.header.repeat = mem.number
+            # WARNING there be dragons here !
+            # 1. The section map appears AFTER the _channels chunk so we need to 
+            # update the  pointer to it in the programming header.
+            # 2. adding new channels requires adding new names as well.
+            # 3. There are unknown data blocks called misc1 and misc2 that 
+            # also follow the _channels chunk and we have no idea if it contains 
+            # pointer that need relocation.
+            # So ... I'm giving up for now
+            r = wx.MessageBox(_('The ability to add new channels is not fully implemented!\nDO NOT USE!'),
+                              _('Warning'),
+                              wx.ICON_WARNING)
+
+            blank = b'\xccKPKP\xcf\x00\x00\x00\x00\x00\x08\x074\x11\x00\x00\xff\x00\x00\x00\x00\x00\xff7'
+
+            while mem.number > self._num_personality:
+                self._channels.extend(blank)
+
+            self._channels.parse(CHANNELS)
+            _mem = self._channels._memobj.personality[mem.number - 1]
 
         _mem.rxfreq, _mem.rxstep = self._encode_freq(mem.freq)
         _mem.txfreq, _mem.txstep = _mem.rxfreq, _mem.rxstep  # FIXME duplex
