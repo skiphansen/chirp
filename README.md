@@ -1,20 +1,18 @@
 # What is this ?
 
-This fork of the official git repository of the
-__[CHIRP](https://www.chirpmyradio.com)__ project which contains a driver for the Motorola "Waris" series of radios.
+This fork of the __[CHIRP](https://www.chirpmyradio.com)__ repository contains a [driver](https://github.com/skiphansen/chirp/blob/waris_py3_port/chirp/drivers/Waris.py) for the Motorola "Waris" series of radios.
 
-
-The Waris family was introduced in 1999 and were manufactured for a number of years.
-They are very plentiful on the used market for reasonable prices.
-
-The CDM series are the basis of many repeaters as well as being widely used for UHF links.
-
-They have an excellent reputation.
+The driver is useful currently (see below), but it has not be submitted to the official project since it is incomplete.
 
 # Why
 
 Executive summary:  I bought a UHF range 2 CDM1550 LS+ on ebay and needed
 to "hex edit" the code plug to move it in the HAM band.
+
+The Waris family was introduced in 1999 and was manufactured for a number of years.
+They are very plentiful on the used market for reasonable prices.
+
+In particular the CDM series of radios are the basis of many repeaters as well as being widely used for UHF links and they have an excellent reputation.
 
 A google search for "motorola waris" yielded lots of useful information on what was required.
 
@@ -45,7 +43,7 @@ in expending further effort with this driver.
 
 I've added an auto convert function to the driver.  When you download the tuning
 data from a UHF range 2 radio you will be offered with choice to automatically 
-convert.
+modify it for the Ham band.
 
 <img width="587" height="437" alt="image" src="https://github.com/user-attachments/assets/b686bea8-9052-463b-9c73-86e15beb8a76" />
 
