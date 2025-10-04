@@ -1,13 +1,17 @@
 # What is this ?
 
-This fork of the __[CHIRP](https://www.chirpmyradio.com)__ repository contains a [driver](https://github.com/skiphansen/chirp/blob/waris_py3_port/chirp/drivers/Waris.py) for the Motorola "Waris" series of radios.
-
-The Waris family was introduced in 1999 and was manufactured for a number of years.
-They are very plentiful on the used market for reasonable prices.
-
-In particular the CDM series of radios are the basis of many repeaters as well as being widely used for UHF links and they have an excellent reputation.
+This is a fork of the __[CHIRP](https://www.chirpmyradio.com)__ repository which contains a [driver](https://github.com/skiphansen/chirp/blob/waris_py3_port/chirp/drivers/Waris.py) for the Motorola "Waris" series of radios.
 
 The driver is useful currently (see below), but it has not be submitted to the official project since it is incomplete.
+
+The Waris family was introduced by Motorola in 1999 and supported until June 2015.
+Since they are no long supported and many replacement parts are no longer 
+available they are primarily of interest to hams.  
+
+As of 2025 they are still plentiful on the used market for reasonable prices.
+
+In particular the CDM series of radios are the basis of many ham repeaters as 
+well as being widely used for UHF links and have an excellent reputation.
 
 # Why
 
@@ -20,7 +24,7 @@ After watching Bryan Fields's YouTube video [Motorola Waris Tuning Pier Adjustme
 I decided to use Chirp and the Waris.py driver to assist my Hex editing.
 
 I immediately discovered that the driver was written when Chrip was still using
-Python 2.x and that it no longer worked with the recent versions of Chrip.
+Python 2.x and that it no longer worked with recent versions of Chrip.
 
 I don't have much experience with Python, but I decided to try to port the driver
 to Python 3 rather than using a old version of Chirp.
@@ -29,23 +33,23 @@ to Python 3 rather than using a old version of Chirp.
 
 The driver works for editing tuning data and to a limited extent channel data.
 
-Lots of things are NOT supported such as zones, scan lists, channel names and 
+Lots of things are **NOT** supported such as zones, scan lists, channel names and 
 button assignments.
 
 All of this could be added, but additional reverse engineering of the code plug
 format is required.
 
 Since the Motorola CPS for the Waris is "out there" and runs well on a
-modern system (Windows 10 VM running under Windows 11), I see little reason
-in expending further effort with this driver.
+modern system, I see little reason in expending further effort with this driver.
 
 # New features
 
-I've added an auto range convert function to the driver.  When you download 
-the tuning data from a UHF range 2 radio you will be offered with choice to 
-automatically modify it for the Ham band.
+I've added a function to automatically modify the tuning data of UHF Range 2 
+radios to cover the 440 ham band.  
 
-If you click "Yes" the following edits are made:
+When you download the tuning data from an
+unmodified UHF  range 2 radio you will be asked if you want to modify it for the 
+Ham band. If you click "Yes" the following edits are made:
 
 1. All tuning piers, RF test channels, and data tables are moved up one slot to make room for a 440 -> 450 pier at position 0.
 2. The data for the new 440 pier is extrapolated from the existing data for all data tables.
@@ -81,9 +85,9 @@ in the usual way.
 
 ## Step 1 - Read tuning data from radio.
 
-From Chirp's Radio menu select Download from Radio (or hit ALT-D)
+From Chirp's Radio menu select Download from Radio (or hit ALT-D).
 
-Select "Motorola" for the vendor and "Waris Tuning" for the model, click "Ok"
+Select "Motorola" for the vendor and "Waris Tuning" for the model, click "Ok".
 
 
 <img width="531" height="436" alt="image" src="https://github.com/user-attachments/assets/96fc4d77-2597-4cf8-a235-2b83801d49f4" />
@@ -91,11 +95,11 @@ Select "Motorola" for the vendor and "Waris Tuning" for the model, click "Ok"
 
 ## Step 2 - Save the **UNMODIFIED** data as a backup.
 
-From Chirp's File menu select "Save as"
+From Chirp's File menu select "Save as".
 
 <img width="518" height="448" alt="image" src="https://github.com/user-attachments/assets/62f78e68-a86d-4f8d-8555-22a3d6c9b8fb" />
 
-Change the filename to something meaningful like "factoryTuning" and click "Save"
+Change the filename to something meaningful like "factoryTuning" and click "Save".
 
 <img width="883" height="253" alt="image" src="https://github.com/user-attachments/assets/df427d5b-b529-4f90-97f6-5bd6269accef" />
 
@@ -110,7 +114,7 @@ Click "Yes" to convert.
 
 <img width="538" height="357" alt="image" src="https://github.com/user-attachments/assets/79ae9404-0d06-4eea-9612-30a5370d54f2" />
 
-You will be reminded that you should backup your **UNMODIFED** tuning data, since we have already done this just click "Ok"
+You will be reminded that you should backup your **UNMODIFED** tuning data, since we have already done this just click "Ok".
 
 <img width="614" height="369" alt="image" src="https://github.com/user-attachments/assets/738f6218-721d-4bfb-9e46-db1158b06eb3" />
 
@@ -123,23 +127,24 @@ probably increase the receiver sensitivity in the 440->450 Mhz region.
 
 <img width="509" height="432" alt="image" src="https://github.com/user-attachments/assets/7e2402ad-f749-469b-83bd-ec3abff74c44" />
 
-Of course if you have the appropriate test equipment you should tune the 
+Of course if you have test equipment you should still tune the 
 radio using the universal tuner software for ultimate performance.
 
 
 ## Step 4 - Save the **MODIFIED** data as a backup.
 
-From Chirp's File menu select "Save as"
+From Chirp's File menu select "Save as".
 
 <img width="518" height="448" alt="image" src="https://github.com/user-attachments/assets/62f78e68-a86d-4f8d-8555-22a3d6c9b8fb" />
 
-Change the filename to something meaningful and click "Save"
+Change the filename to something meaningful and click "Save".
 
 
 ## Step 5 - Write the new tuning data to the radio.
 
-Finally upload the modified tuning data back to the radio by selecting "Upload to radio..." from Chirp's Radio menu (or by hitting ALT-U)
+Finally upload the modified tuning data back to the radio by selecting "Upload to radio..." from Chirp's Radio menu (or by hitting ALT-U).
 
 <img width="425" height="305" alt="image" src="https://github.com/user-attachments/assets/07c3df38-a1dc-4296-a502-45af5f6e6a96" />
 
 You should now be able to use an unmodified Waris CPS to program up to 255 channels in the usual way.
+
