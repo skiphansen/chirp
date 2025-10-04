@@ -936,7 +936,8 @@ class WarisBase(object):
 
         per_pier_valuse = (
             ("vcoattn25", "VCO Attenuation 25 Khz", _mem.vcoattn25,127),
-            ("modbalattn", "front end filter", _mem.modbalattn,63),
+            ("modbalattn", "Modulation balance", _mem.modbalattn,63),
+            ("frontendfilter", "front end filter", _mem.frontendfilter,127),
             ("kvalues", "transmit power K value", _mem.kvalues,256),
             ("mvalues", "transmit power M value", _mem.mvalues,256),
             ("squelch12", "Squelch Attn. 12.5 KHz", _mem.squelch12,63),
