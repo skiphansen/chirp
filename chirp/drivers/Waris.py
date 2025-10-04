@@ -1047,6 +1047,10 @@ class WarisBase(object):
             0, 10, str(_mem.tanapa).rstrip()))
         fdb.append(rs)
 
+        if _mem.region >= len(REGIONS):
+        # invalid region (default code plug), set it to North America
+            _mem.region = 1
+
         rs = RadioSetting("region", "Region", RadioSettingValueList(
             REGIONS, REGIONS[_mem.region]))
         fdb.append(rs)
