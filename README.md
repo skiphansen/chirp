@@ -64,7 +64,7 @@ By clicking "Yes" the following edits are made:
 The most significant change is to the front end filter's data table which will
 probably increase the receiver sensitivity in the 440->450 Mhz region.
 
-<img width="592" height="369" alt="image" src="https://github.com/user-attachments/assets/1457424f-67c5-443e-b556-ee624d2194f0" />
+<img width="509" height="432" alt="image" src="https://github.com/user-attachments/assets/7e2402ad-f749-469b-83bd-ec3abff74c44" />
 
 Of course if you have the appropriate test equipment you should tune the 
 radio using the universal tuner software for ultimate performance.
