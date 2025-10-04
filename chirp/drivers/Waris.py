@@ -613,7 +613,7 @@ def _find_chunks(mmap, start=0x00):
         data = bytearray()
 
         byte = f.read(1)
-        if byte == "":
+        if byte == b'':
             # EOF
             break
 
@@ -759,22 +759,22 @@ class WarisBase(object):
             chirp_common.CloneModeRadio.load_mmap(self, filename)
 
     def save_mmap(self, filename):
-        """
-        try to open a file and write to it
-        If IOError raise a File Access Error Exception
-        """
+        # try to open a file and write to it
+        # If IOError raise a File Access Error Exception
+
         # _prog: list of Chunk objects
 #        programming = ''.join([x.get_packed() for x in self._prog])
-        new_image = bytearray(self._mmap.get(0,0x308))
 
-        if not issubclass(self.__class__,WarisTuningRadio):
+        if issubclass(self.__class__,WarisTuningRadio):
+            new_image = bytearray(self._mmap.get(0,0x308))
+        else:
+            new_image = bytearray(self._mmap.get(0,0x308))
             for x in self._prog:
                 new_image.extend(x.get_packed())
             print(f' Adding _misc {len(self._misc)}/0x{len(self._misc):x} bytes @ 0x{x.end:x}')
             new_image.extend(self._misc)
-
-        print(f'len(new_image) {len(new_image)}/0x{len(new_image):x}')
-        self._mmap = memmap.MemoryMapBytes(bytes(new_image))
+            print(f'len(new_image) {len(new_image)}/0x{len(new_image):x}')
+            self._mmap = memmap.MemoryMapBytes(bytes(new_image))
         # TODO: update programming_length
         self.update_checksums()
         print(f'Saving img to {filename}')
@@ -1426,15 +1426,15 @@ class WarisRadio(WarisBase):
 
     @classmethod
     def match_model(cls, filedata, filename):
-        return filedata.startswith("\x02\x80") and len(filedata) != 0x300 or \
+        return filedata.startswith(b'\x02\x80') and len(filedata) != 0x300 or \
             filename.endswith('.mot')
 
 
+# Motorola Waris Tuning only
+# It is assumed the user will want to perform tuning and programming
+# independently, so this separate tuning driver is provided.
 @directory.register
 class WarisTuningRadio(WarisBase, chirp_common.CloneModeRadio):
-    """Motorola Waris Tuning only
-    It is assumed the user will want to perform tuning and programming
-    independently, so this separate tuning driver is provided."""
     MODEL = "Waris Tuning"
     _memsize = 0x300
 
@@ -1478,7 +1478,6 @@ class WarisTuningRadio(WarisBase, chirp_common.CloneModeRadio):
                 obj = self._tuning
 
             print("Setting %s = %s" % (name, setting.value))
-            print(repr(obj))
             if setting.has_apply_callback():
                 setting.run_apply_callback()
             else:
