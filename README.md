@@ -51,9 +51,11 @@ When you download the tuning data from an
 unmodified UHF  range 2 radio you will be asked if you want to modify it for the 
 Ham band. If you click "Yes" the following edits are made:
 
-1. All tuning piers, RF test channels, and data tables are moved up one slot to make room for a 440 -> 450 pier at position 0.
-2. The data for the new 440 pier is extrapolated from the existing data for all data tables.
-3. The conventional channel limit is set to 255 channels.
+1. The lower band limit is changed from 450 Mhz to 440 Mhz.
+2. The upper band limit is chagned from 520 Mhz to 510 Mhz.
+3. All tuning piers, RF test channels, and data tables are moved up one slot to make room for a 440 -> 450 pier at position 0.
+4. The data for the new 440 pier is extrapolated from the existing data for all data tables.
+5. The conventional channel limit is set to 255 channels.
 
 A similar function could be added to convert a low band radio to 46-54 MHz.
 
