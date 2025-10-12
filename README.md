@@ -1,11 +1,11 @@
 # What is this ?
 
-This is a fork of the __[CHIRP](https://www.chirpmyradio.com)__ repository which contains a [driver](https://github.com/skiphansen/chirp/blob/waris_py3_port/chirp/drivers/Waris.py) for the Motorola "Waris" series of radios.
+This is a fork of the __[CHIRP](https://www.chirpmyradio.com)__ repository which adds a [driver](https://github.com/skiphansen/chirp/blob/waris_py3_port/chirp/drivers/Waris.py) for the Motorola "Waris" series of radios.
 
 The driver is useful currently (see below), but it has not be submitted to the official project since it is incomplete.
 
 The Waris family was introduced by Motorola in 1999 and supported until June 2015.
-Since they are no long supported and many replacement parts are no longer 
+Since these radios are no long supported and many replacement parts are no longer 
 available they are primarily of interest to hams.  
 
 As of 2025 they are still plentiful on the used market for reasonable prices.
@@ -52,7 +52,7 @@ unmodified UHF  range 2 radio you will be asked if you want to modify it for the
 Ham band. If you click "Yes" the following edits are made:
 
 1. The lower band limit is changed from 450 Mhz to 440 Mhz.
-2. The upper band limit is chagned from 520 Mhz to 510 Mhz.
+2. The upper band limit is changed from 520 Mhz to 510 Mhz.
 3. All tuning piers, RF test channels, and data tables are moved up one slot to make room for a 440 -> 450 pier at position 0.
 4. The data for the new 440 pier is extrapolated from the existing data for all data tables.
 5. The conventional channel limit is set to 255 channels.
@@ -75,9 +75,9 @@ See the [CHIRP](https://www.chirpmyradio.com) website for documentation.
 # Converting 450-520 Mhz to 440-510 Mhz
 
 Executive summary:
-1. Read tuning data from radio.
+1. Read the tuning data from radio.
 2. Save the **UNMODIFIED** data as a backup.
-3. Use the auto convert option to modify the stock turning data for the ham band.
+3. Use the auto convert option to modify the stock tuning data for the ham band.
 4. Save the **MODIFIED** data as a backup.
 5. Write the new tuning data to the radio.
 
