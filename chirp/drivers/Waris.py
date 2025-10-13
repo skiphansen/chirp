@@ -302,9 +302,9 @@ struct {
 } button_assignments;
 """
 CHANNEL_NAMES = """
-u8 personalitynamelen;
 struct {
-  char name[14];
+  u8 personalitynamelen;
+  char name[15];
 } personalitynames[255];
 """
 TRUNKING_BUTTON_ASSIGNMENTS = """
